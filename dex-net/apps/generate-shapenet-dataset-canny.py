@@ -52,7 +52,7 @@ def do_job(i):
     [p.join() for p in p_set]
     good_grasp = list(good_grasp)
 
-    good_grasp_file_name = "./generated_grasps/{}_{}_{}".format(filename_prefix, str(object_name), str(len(good_grasp)))
+    good_grasp_file_name = os.path.join(grasps_dir, '{}_{}_{}'.format(filename_prefix, str(object_name), str(len(good_grasp))))
     with open(good_grasp_file_name + '.pickle', 'wb') as f:
         pickle.dump(good_grasp, f, protocol=2)
 
@@ -70,9 +70,9 @@ def worker(i, sample_nums, grasp_amount, good_grasp):
     object_name = file_list_all[i]['object_name']
     logger.info('a worker of task {} start'.format(object_name))
 
-    yaml_config = YamlConfig(home_dir + "/code/grasp-pointnet/dex-net/test/config.yaml")
+    yaml_config = YamlConfig(dexnet_dir + "/test/config.yaml")
     gripper_name = 'robotiq_85'
-    gripper = RobotGripper.load(gripper_name, home_dir + "/code/grasp-pointnet/dex-net/data/grippers")
+    gripper = RobotGripper.load(gripper_name, dexnet_dir + "/data/grippers")
     grasp_sample_method = "antipodal"
     if grasp_sample_method == "uniform":
         ags = UniformGraspSampler(gripper, yaml_config)
@@ -104,8 +104,8 @@ def worker(i, sample_nums, grasp_amount, good_grasp):
     fc_list_sub1 = np.arange(2.0, 0.75, -0.4)
     fc_list_sub2 = np.arange(0.5, 0.36, -0.05)
     fc_list = np.concatenate([fc_list_sub1, fc_list_sub2])
+    fc_list = np.around(fc_list, decimals=2)
     for value_fc in fc_list:
-        value_fc = round(value_fc, 2)
         yaml_config['metrics']['force_closure']['friction_coef'] = value_fc
         yaml_config['metrics']['robust_ferrari_canny']['friction_coef'] = value_fc
 
@@ -142,27 +142,24 @@ def worker(i, sample_nums, grasp_amount, good_grasp):
 
 
 if __name__ == '__main__':
-    if len(sys.argv) > 1:
-        filename_prefix = sys.argv[1]
-    else:
-        filename_prefix = "default"
-    home_dir = os.environ['HOME']
+    dexnet_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 
     parser = argparse.ArgumentParser(description='Generate Grasps for Dex-Net')
     parser.add_argument('-ds', '--dataset', type=str, required=True)
+    parser.add_argument('-p', '--prefix', type=str, default="default")
+    parser.add_argument('-gs', '--grasps_dir', type=str, default="generated_grasps")
     args = parser.parse_args()
 
-    file_list_available = []
-    ds = np.loadtxt(args.dataset, delimiter=' ', dtype=np.str)
-    file_list_available = ds
+    grasps_dir = os.path.abspath(args.grasps_dir)
+
+    filename_prefix = args.prefix
+    file_list_available = np.loadtxt(args.dataset, delimiter=' ', dtype=np.str)
 
     # check if file already processed
-
-    already_generated = [re.sub('_\d+\.pickle', '', f) for f in os.listdir('./generated_grasps/') if '.pickle' in f]
+    pickle_names = [f for f in os.listdir(grasps_dir) if '.pickle' in f]
     file_list_all = []
     for object_name, obj_file, sdf_file in file_list_available:
-        good_grasp_file_name = "{}_{}".format(filename_prefix, str(object_name))
-        if good_grasp_file_name not in already_generated:
+        if not any([(object_name in pfn) for pfn in pickle_names]):
             file_list_all.append({"object_name": object_name, "obj_file": obj_file, "sdf_file": sdf_file})
 
     print(file_list_all)
