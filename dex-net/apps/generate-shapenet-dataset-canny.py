@@ -122,27 +122,12 @@ def worker(i, sample_nums, grasp_amount, good_grasp):
                                      vis=False, random_approach_angle=True)
         count += len(grasps)
         for j in grasps:
-            tmp, is_force_closure = False, False
-            for ind_, value_fc in enumerate(fc_list):
-                value_fc = round(value_fc, 2)
-                tmp = is_force_closure
-                is_force_closure = PointGraspMetrics3D.grasp_quality(j, obj,
-                                                                     force_closure_quality_config[value_fc], vis=False)
-                if tmp and not is_force_closure:
-                    if good_count_perfect[ind_ - 1] < minimum_grasp_per_fc:
-                        canny_quality = PointGraspMetrics3D.grasp_quality(j, obj,
-                                                                          canny_quality_config[
-                                                                              round(fc_list[ind_ - 1], 2)],
-                                                                          vis=False)
-                        good_grasp.append((j, round(fc_list[ind_ - 1], 2), canny_quality))
-                        good_count_perfect[ind_ - 1] += 1
-                    break
-                elif is_force_closure and value_fc == fc_list[-1]:
-                    if good_count_perfect[ind_] < minimum_grasp_per_fc:
-                        canny_quality = PointGraspMetrics3D.grasp_quality(j, obj,
-                                                                          canny_quality_config[value_fc], vis=False)
-                        good_grasp.append((j, value_fc, canny_quality))
-                        good_count_perfect[ind_] += 1
+            for ind_, value_fc in [f for f in enumerate(fc_list)][::-1]:
+                is_force_closure = PointGraspMetrics3D.grasp_quality(j, obj, force_closure_quality_config[value_fc], vis=False)
+                if is_force_closure and good_count_perfect[ind_] < minimum_grasp_per_fc:
+                    canny_quality = PointGraspMetrics3D.grasp_quality(j, obj, canny_quality_config[value_fc], vis=False)
+                    good_grasp.append((j, value_fc, canny_quality))
+                    good_count_perfect[ind_] += 1
                     break
         logger.info('Object:{} GoodGrasp:{}'.format(object_name, good_count_perfect))
 
