@@ -24,12 +24,14 @@ except ImportError:
 from dexnet.grasping import GpgGraspSampler  # temporary way for show 3D gripper using mayavi
 import pcl
 import glob
+import argparse
 
 # global configurations:
 home_dir = os.environ['HOME']
-yaml_config = YamlConfig(home_dir + "/code/grasp-pointnet/dex-net/test/config.yaml")
+dexnet_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+yaml_config = YamlConfig(dexnet_dir + "/test/config.yaml")
 gripper_name = 'robotiq_85'
-gripper = RobotGripper.load(gripper_name, home_dir + "/code/grasp-pointnet/dex-net/data/grippers")
+gripper = RobotGripper.load(gripper_name, dexnet_dir + "/data/grippers")
 ags = GpgGraspSampler(gripper, yaml_config)
 save_fig = False  # save fig as png file
 show_fig = True  # show the mayavi figure
@@ -70,34 +72,19 @@ def fuzzy_finder(user_input, collection):
     return suggestions
 
 
-def open_pickle_and_obj(name_to_open_):
-    pickle_names_ = get_pickle_file_name(home_dir + "/code/grasp-pointnet/dex-net/apps/generated_grasps")
-    suggestion_pickle = fuzzy_finder(name_to_open_, pickle_names_)
+def open_pickle_and_obj(object_to_display):
+    pickle_names_ = get_pickle_file_name(grasps_dir)
+    suggestion_pickle = fuzzy_finder(object_to_display['object_name'], pickle_names_)
     if len(suggestion_pickle) != 1:
         print("Pickle file suggestions:", suggestion_pickle)
         exit("Name error for pickle file!")
     pickle_m_ = pickle.load(open(suggestion_pickle[0], 'rb'))
 
-    file_dir = home_dir + "/dataset/ycb_meshes_google/objects"
-    file_list_all = get_file_name(file_dir)
-    new_sug = re.findall(r'_\d+', suggestion_pickle[0], flags=0)
-    new_sug = new_sug[0].split('_')
-    new_sug = new_sug[1]
-    suggestion = fuzzy_finder(new_sug, file_list_all)
-
-    # very dirty way to support name with "-a, -b etc."
-    if len(suggestion) != 1:
-        new_sug = re.findall(r'_\d+\W\w', suggestion_pickle[0], flags=0)
-        new_sug = new_sug[0].split('_')
-        new_sug = new_sug[1]
-        suggestion = fuzzy_finder(new_sug, file_list_all)
-        if len(suggestion) != 1:
-            exit("Name error for obj file!")
-    object_name_ = suggestion[0][len(file_dir) + 1:]
-    ply_name_ = suggestion[0] + "/google_512k/nontextured.ply"
+    object_name_ = object_to_display['object_name']
+    ply_name_ = object_to_display['obj_file'].replace('.obj', '.stl')
     if not check_pcd_grasp_points:
-        of = ObjFile(suggestion[0] + "/google_512k/nontextured.obj")
-        sf = SdfFile(suggestion[0] + "/google_512k/nontextured.sdf")
+        of = ObjFile(object_to_display['obj_file'])
+        sf = SdfFile(object_to_display['sdf_file'])
         mesh = of.read()
         sdf = sf.read()
         obj_ = GraspableObject3D(sdf, mesh)
@@ -120,8 +107,7 @@ def display_gripper_on_object(obj_, grasp_):
     """display both object and gripper using mayavi"""
     # transfer wrong was fixed by the previews comment of meshpy modification.
     # gripper_name = 'robotiq_85'
-    # home_dir = os.environ['HOME']
-    # gripper = RobotGripper.load(gripper_name, home_dir + "/code/grasp-pointnet/dex-net/data/grippers")
+    # gripper = RobotGripper.load(gripper_name, dexnet_dir + "/data/grippers")
     # stable_pose = self.dataset.stable_pose(object.key, 'pose_1')
     # T_obj_world = RigidTransform(from_frame='obj', to_frame='world')
     t_obj_gripper = grasp_.gripper_pose(gripper)
@@ -160,9 +146,11 @@ def display_grasps(grasps, graspable, color):
 
 def show_selected_grasps_with_color(m, ply_name_, title, obj_):
     m_good = m[m[:, 1] <= 0.4]
-    m_good = m_good[np.random.choice(len(m_good), size=25, replace=True)]
+    if len(m_good) > 25:
+        m_good = m_good[np.random.choice(len(m_good), size=25, replace=True)]
     m_bad = m[m[:, 1] >= 1.8]
-    m_bad = m_bad[np.random.choice(len(m_bad), size=25, replace=True)]
+    if len(m_bad)>25:
+        m_bad = m_bad[np.random.choice(len(m_bad), size=25, replace=True)]
     collision_grasp_num = 0
 
     if save_fig or show_fig:
@@ -239,23 +227,31 @@ def get_grasp_points_num(m, obj_):
 
 
 if __name__ == '__main__':
-    name_to_open = []
-    if len(sys.argv) > 1:
-        name_to_open.append(str(sys.argv[1]))
-    else:
-        name_to_open = "all"
+    parser = argparse.ArgumentParser(description='Visualize Grasps for Dex-Net')
+    parser.add_argument('-ds', '--dataset', type=str, required=True)
+    parser.add_argument('-gs', '--grasps_dir', type=str, default="generated_grasps")
+    args = parser.parse_args()
+    file_list_available = np.loadtxt(args.dataset, delimiter=' ', dtype=np.str)
 
-    if name_to_open != "all":  # not only show one object
-        for i in range(len(name_to_open)):
-            grasps_with_score, obj, ply_name, obj_name = open_pickle_and_obj(name_to_open[i])
-            assert(len(grasps_with_score) > 0)
-            with_score = isinstance(grasps_with_score[0], tuple) or isinstance(grasps_with_score[0], list)
-            if with_score:
-                grasps_with_score = np.array(grasps_with_score)
-                show_selected_grasps_with_color(grasps_with_score, ply_name, obj_name, obj)
+    grasps_dir = os.path.abspath(args.grasps_dir)
+    pickle_names = get_pickle_file_name(grasps_dir)
+    file_list_all = []
+    for object_name, obj_file, sdf_file in file_list_available:
+        if any([(object_name in pfn) for pfn in pickle_names]):
+            file_list_all.append({"object_name": object_name, "obj_file": obj_file, "sdf_file": sdf_file})
 
-    elif show_fig or save_fig or generate_new_file:  # show all objects in directory
-        pickle_names = get_pickle_file_name(home_dir + "/code/grasp-pointnet/dex-net/apps/generated_grasps")
+
+    for i in range(len(file_list_all)):
+        grasps_with_score, obj, ply_name, obj_name = open_pickle_and_obj(file_list_all[i])
+        assert(len(grasps_with_score) > 0)
+        with_score = isinstance(grasps_with_score[0], tuple) or isinstance(grasps_with_score[0], list)
+        if with_score:
+            grasps_with_score = np.array(grasps_with_score)
+            show_selected_grasps_with_color(grasps_with_score, ply_name, obj_name, obj)
+
+    """
+    if show_fig or save_fig or generate_new_file:  # show all objects in directory
+        pickle_names = get_pickle_file_name(grasps_dir)
         pickle_names.sort()
         for i in range(len(pickle_names)):
             grasps_with_score, obj, ply_name, obj_name = open_pickle_and_obj(pickle_names[i])
@@ -283,3 +279,4 @@ if __name__ == '__main__':
                 has_points, ind_points = get_grasp_points_num(grasps_with_score, point_clouds_np)
                 np_name = "./generated_grasps/point_data/"+obj_name+"_"+obj[j].split("/")[-1][:-3]+"npy"
                 np.save(np_name, ind_points)
+    """    
