@@ -21,6 +21,7 @@ import multiprocessing
 import matplotlib.pyplot as plt
 plt.switch_backend('agg')  # for the convenient of run on remote computer
 import logging
+import argparse
 
 log_filename = os.path.join('generate-shapenet.log')
 formatter = logging.Formatter('%(asctime)s %(levelname)s: %(message)s')
@@ -42,7 +43,7 @@ def get_file_name(file_dir_):
 
 
 def do_job(i):
-    object_name = file_list_all[i].replace(file_dir, '').replace('/', '_')  #[len(home_dir) + 35:]
+    object_name = file_list_all[i]['object_name']
     logger.info("start job ", object_name)
     good_grasp = multiprocessing.Manager().list()
     p_set = [multiprocessing.Process(target=worker, args=(i, 100, 20, good_grasp)) for _ in
@@ -66,7 +67,7 @@ def do_job(i):
 
 
 def worker(i, sample_nums, grasp_amount, good_grasp):
-    object_name = file_list_all[i].replace(file_dir, '').replace('/', '_')  #[len(home_dir) + 35:]
+    object_name = file_list_all[i]['object_name']
     logger.info('a worker of task {} start'.format(object_name))
 
     yaml_config = YamlConfig(home_dir + "/code/grasp-pointnet/dex-net/test/config.yaml")
@@ -86,12 +87,10 @@ def worker(i, sample_nums, grasp_amount, good_grasp):
     else:
         raise NameError("Can't support this sampler")
     logger.info("Log: do job", i)
-    #if os.path.exists(str(file_list_all[i]) + "/google_512k/nontextured.obj"):
-    #    of = ObjFile(str(file_list_all[i]) + "/google_512k/nontextured.obj")
-    #    sf = SdfFile(str(file_list_all[i]) + "/google_512k/nontextured.sdf")
-    if os.path.exists(str(file_list_all[i]) + "/models/model_normalized.obj"):
-        of = ObjFile(str(file_list_all[i]) + "/models/model_normalized.obj")
-        sf = SdfFile(str(file_list_all[i]) + "/models/model_normalized.sdf")
+
+    if os.path.exists(str(file_list_all[i]['obj_file'])):
+        of = ObjFile(str(file_list_all[i]['obj_file']))
+        sf = SdfFile(str(file_list_all[i]['sdf_file']))
     else:
         logger.info("can't find any obj or sdf file!")
         raise NameError("can't find any obj or sdf file!")
@@ -163,15 +162,23 @@ if __name__ == '__main__':
     else:
         filename_prefix = "default"
     home_dir = os.environ['HOME']
-    #file_dir = home_dir + "/dataset/ycb_meshes_google/objects"
 
+    parser = argparse.ArgumentParser(description='Generate Grasps for Dex-Net')
+    parser.add_argument('-ds', '--dataset', type=str, required=True)
+    args = parser.parse_args()
 
-    shapenet_folders = ['03797390', '02876657', '02880940', '02946921', '03593526', '03624134', '02992529', '02942699', '04074963']
-    file_dir = home_dir + '/dataset/ShapeNetCore.v2/'
-    
+    file_list_available = []
+    ds = np.loadtxt(args.dataset, delimiter=' ', dtype=np.str)
+    file_list_available = ds
+
+    # check if file already processed
+
+    already_generated = [re.sub('_\d+\.pickle', '', f) for f in os.listdir('./generated_grasps/') if '.pickle' in f]
     file_list_all = []
-    for f in shapenet_folders:
-        file_list_all.extend(get_file_name(os.path.join(file_dir, f)))
+    for object_name, obj_file, sdf_file in file_list_available:
+        good_grasp_file_name = "{}_{}".format(filename_prefix, str(object_name))
+        if good_grasp_file_name not in already_generated:
+            file_list_all.append({"object_name": object_name, "obj_file": obj_file, "sdf_file": sdf_file})
 
     print(file_list_all)
     object_numbers = file_list_all.__len__()
