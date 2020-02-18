@@ -8,6 +8,7 @@
 import numpy as np
 import sys
 import pickle
+import re
 from dexnet.grasping.quality import PointGraspMetrics3D
 from dexnet.grasping import GaussianGraspSampler, AntipodalGraspSampler, UniformGraspSampler, GpgGraspSampler
 from dexnet.grasping import RobotGripper, GraspableObject3D, GraspQualityConfigFactory, PointGraspSampler
@@ -19,6 +20,16 @@ import os
 import multiprocessing
 import matplotlib.pyplot as plt
 plt.switch_backend('agg')  # for the convenient of run on remote computer
+import logging
+
+log_filename = os.path.join('generate-shapenet.log')
+formatter = logging.Formatter('%(asctime)s %(levelname)s: %(message)s')
+hdlr = logging.FileHandler(log_filename)
+hdlr.setFormatter(formatter)
+logger = logging.getLogger()
+logger.addHandler(hdlr)
+
+
 
 
 def get_file_name(file_dir_):
@@ -32,7 +43,7 @@ def get_file_name(file_dir_):
 
 def do_job(i):
     object_name = file_list_all[i].replace(file_dir, '').replace('/', '_')  #[len(home_dir) + 35:]
-    print("start job ", object_name)
+    logger.info("start job ", object_name)
     good_grasp = multiprocessing.Manager().list()
     p_set = [multiprocessing.Process(target=worker, args=(i, 100, 20, good_grasp)) for _ in
              range(50)]  # grasp_amount per friction: 20*40
@@ -42,7 +53,7 @@ def do_job(i):
 
     good_grasp_file_name = "./generated_grasps/{}_{}_{}".format(filename_prefix, str(object_name), str(len(good_grasp)))
     with open(good_grasp_file_name + '.pickle', 'wb') as f:
-        pickle.dump(good_grasp, f)
+        pickle.dump(good_grasp, f, protocol=2)
 
     tmp = []
     for grasp in good_grasp:
@@ -51,12 +62,12 @@ def do_job(i):
         score_canny = grasp[2]
         tmp.append(np.concatenate([grasp_config, [score_friction, score_canny]]))
     np.save(good_grasp_file_name + '.npy', np.array(tmp))
-    print("finished job ", object_name)
+    logger.info("finished job ", object_name)
 
 
 def worker(i, sample_nums, grasp_amount, good_grasp):
-    object_name = file_list_all[i][len(home_dir) + 35:]
-    print('a worker of task {} start'.format(object_name))
+    object_name = file_list_all[i].replace(file_dir, '').replace('/', '_')  #[len(home_dir) + 35:]
+    logger.info('a worker of task {} start'.format(object_name))
 
     yaml_config = YamlConfig(home_dir + "/code/grasp-pointnet/dex-net/test/config.yaml")
     gripper_name = 'robotiq_85'
@@ -74,7 +85,7 @@ def worker(i, sample_nums, grasp_amount, good_grasp):
         ags = PointGraspSampler(gripper, yaml_config)
     else:
         raise NameError("Can't support this sampler")
-    print("Log: do job", i)
+    logger.info("Log: do job", i)
     #if os.path.exists(str(file_list_all[i]) + "/google_512k/nontextured.obj"):
     #    of = ObjFile(str(file_list_all[i]) + "/google_512k/nontextured.obj")
     #    sf = SdfFile(str(file_list_all[i]) + "/google_512k/nontextured.sdf")
@@ -82,12 +93,12 @@ def worker(i, sample_nums, grasp_amount, good_grasp):
         of = ObjFile(str(file_list_all[i]) + "/models/model_normalized.obj")
         sf = SdfFile(str(file_list_all[i]) + "/models/model_normalized.sdf")
     else:
-        print("can't find any obj or sdf file!")
+        logger.info("can't find any obj or sdf file!")
         raise NameError("can't find any obj or sdf file!")
     mesh = of.read()
     sdf = sf.read()
     obj = GraspableObject3D(sdf, mesh)
-    print("Log: opened object", i + 1, object_name)
+    logger.info("Log: opened object", i + 1, object_name)
 
     force_closure_quality_config = {}
     canny_quality_config = {}
@@ -134,7 +145,7 @@ def worker(i, sample_nums, grasp_amount, good_grasp):
                         good_grasp.append((j, value_fc, canny_quality))
                         good_count_perfect[ind_] += 1
                     break
-        print('Object:{} GoodGrasp:{}'.format(object_name, good_count_perfect))
+        logger.info('Object:{} GoodGrasp:{}'.format(object_name, good_count_perfect))
 
     object_name_len = len(object_name)
     object_name_ = str(object_name) + " " * (25 - object_name_len)
@@ -142,7 +153,7 @@ def worker(i, sample_nums, grasp_amount, good_grasp):
         good_grasp_rate = 0
     else:
         good_grasp_rate = len(good_grasp) / count
-    print('Gripper:{} Object:{} Rate:{:.4f} {}/{}'.
+    logger.info('Gripper:{} Object:{} Rate:{:.4f} {}/{}'.
           format(gripper_name, object_name_, good_grasp_rate, len(good_grasp), count))
 
 
@@ -185,4 +196,4 @@ if __name__ == '__main__':
                 p.start()
                 pool.append(p)
                 break
-    print('All job done.')
+    logger.info('All job done.')

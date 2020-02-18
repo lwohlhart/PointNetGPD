@@ -192,7 +192,10 @@ class GraspSampler:
         while num_grasps_remaining > 0 and k <= max_iter:
             # SAMPLING: generate more than we need
             num_grasps_generate = grasp_gen_mult * num_grasps_remaining
+            t_start_sample_grasps = time.clock()
             new_grasps = self.sample_grasps(graspable, num_grasps_generate, vis, **kwargs)
+            t_end_sample_grasps = time.clock()
+            logger.info('sample_grasps time: %d' % (t_end_sample_grasps - t_start_sample_grasps))
 
             # COVERAGE REJECTION: prune grasps by distance
             pruned_grasps = []
