@@ -151,14 +151,26 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     grasps_dir = os.path.abspath(args.grasps_dir)
+    if not os.path.exists(grasps_dir):
+        os.makedirs(grasps_dir)
 
     filename_prefix = args.prefix
     file_list_available = np.loadtxt(args.dataset, delimiter=' ', dtype=np.str)
+    if len(file_list_available.shape) <= 1:
+        file_list_available = file_list_available.reshape((-1, file_list_available.shape[0]))
+    if file_list_available.shape[1] < 3:
+        # sdf files missing / maybe generate SDF files
+        file_list_available = np.hstack([file_list_available, np.reshape([n.replace('.obj', '.sdf') for n in file_list_available[:,1]],(-1,1))])
+
 
     # check if file already processed
     pickle_names = [f for f in os.listdir(grasps_dir) if '.pickle' in f]
     file_list_all = []
     for object_name, obj_file, sdf_file in file_list_available:
+        if not os.path.isfile(obj_file):
+            raise FileNotFoundError(obj_file)
+        if not os.path.isfile(sdf_file):
+            raise FileNotFoundError(sdf_file)
         if not any([(object_name in pfn) for pfn in pickle_names]):
             file_list_all.append({"object_name": object_name, "obj_file": obj_file, "sdf_file": sdf_file})
 
